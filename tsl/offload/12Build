@@ -1,0 +1,4 @@
+OBJ=endpoint.o      \
+    pool.o          \
+    thread.o
+TARGET_DEFINES=

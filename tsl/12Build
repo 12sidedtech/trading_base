@@ -1,0 +1,15 @@
+TARGET=tsl
+
+OBJ= app.o \
+	cpumask.o \
+	fixed_heap.o \
+	panic.o \
+	rbtree.o \
+	threading.o \
+	time.o \
+	timer.o \
+    worker_thread.o
+
+SUBDIRS_BUILD=test/
+SUBDIRS=alloc/ logger/ offload/ config/ megaqueue/
+TARGET_TYPE=static
