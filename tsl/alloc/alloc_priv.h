@@ -1,7 +1,5 @@
 /*
   Copyright (c) 2013, Phil Vachon <phil@cowpig.ca>
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -66,16 +64,24 @@ struct allocator {
 
 #define SLAB_FLAG_SQUEEZE 0x1   /**< Mark a slab to be squeezed */
 
+struct slab_item {
+    /**
+     * Next slab item to be allocated.
+     */
+    struct slab_item *next;
+};
+
 /** \brief Structure representing a slab's metadata
  * A structure that contains all the metadata for a slab, including a
  * pointer to the first entry in the slab.
  */
 struct slab {
-    struct list_entry snode;    /**< Linked list entry of slabs */
-    struct list_entry free;     /**< Linked list of free items in slab */
-    uint32_t flags;             /**< Flags associated with the slab */
-    uint32_t max_items;         /**< Maximum items you can have in this slab */
-    uint32_t free_item_count;   /**< Count of free items in this slab */
+    struct list_entry snode;            /**< Linked list entry of slabs */
+    struct slab_item *free_items;       /**< Linked list of free items in slab */
+    uint32_t flags;                     /**< Flags associated with the slab */
+    uint32_t max_items;                 /**< Maximum items you can have in this slab */
+    uint32_t free_item_count;           /**< Count of free items in this slab */
+    uint32_t slab_size;                 /**< Size of the slab, in bytes */
 };
 
 #ifdef __cplusplus

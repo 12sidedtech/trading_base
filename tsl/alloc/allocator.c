@@ -47,6 +47,8 @@
 
 #include <ck_spinlock.h>
 
+#define ALLOC_SLAB_NEXT_LINK                (struct slab_item *)0xfefef0f0f1f1f5f5ull
+
 /**
  * \brief Structure representing a particular class of slab.
  *
@@ -190,11 +192,10 @@ aresult_t __allocator_acquire_page(struct slab_class *class,
 
     list_del(item);
 
-    ck_spinlock_unlock(&class->lock);
-
     *ptr = (void *)item;
 
 done:
+    ck_spinlock_unlock(&class->lock);
     return ret;
 }
 
@@ -263,22 +264,22 @@ struct slab *__helper_slab_init(void *slab_base,
     struct slab *slab = (struct slab *)slab_base;
     /* Round first object offset to nearest cache line */
     size_t first_obj_offset = ROUND_CACHE_LINE(sizeof(struct slab));
+    struct slab_item *first = NULL;
 
     list_init(&slab->snode);
-    list_init(&slab->free);
     slab->flags = 0x0;
 
     size_t item_count = (slab_size - first_obj_offset)/obj_size;
     slab->free_item_count = item_count;
     slab->max_items = item_count;
+    slab->slab_size = slab_size;
 
-    for (size_t i = 0; i < item_count; ++i) {
-        ptrdiff_t offs = first_obj_offset + (i * obj_size);
+    first = slab_base + first_obj_offset;
 
-        struct list_entry *item = (struct list_entry *)((ptrdiff_t)slab_base + offs);
-
-        list_append(&slab->free, item);
-    }
+    /* Set up linked list of free items */
+    DIAG("First free item on new slab is %p, slab base is %p", first, slab_base);
+    first->next = ALLOC_SLAB_NEXT_LINK;
+    slab->free_items = first;
 
     return slab;
 }
@@ -469,9 +470,29 @@ aresult_t allocator_alloc(struct allocator *alloc,
         goto done;
     }
 
-    struct list_entry *item = LIST_NEXT(&(first->free));
+    struct slab_item *item = first->free_items;
+    if (NULL == item) {
+        DIAG("Somehow the free item list for this allocator is set to NULL");
+        result = A_E_NOMEM;
+        goto done;
+    }
 
-    list_del(item);
+    if (ALLOC_SLAB_NEXT_LINK == item->next) {
+        /* Fill in the next item */
+        struct slab_item *next = ((void *)item) + alloc->item_size;
+
+        if (((void *)next + alloc->item_size) <= ((void *)first + first->slab_size)) {
+            next->next = ALLOC_SLAB_NEXT_LINK;
+        } else {
+            /* End of the pool of items */
+            next = NULL;
+        }
+
+        item->next = next;
+    }
+
+    first->free_items = item->next;
+    item->next = NULL;
 
     first->free_item_count--;
 
@@ -500,10 +521,12 @@ aresult_t allocator_free(struct allocator *alloc,
 
     /* Find our slab (yay for page alignment rules) */
     struct slab *slab = (struct slab *)((size_t)item & alloc->free_mask);
-    struct list_entry *entry = (struct list_entry *)item;
 
     /* Return item to the free list */
-    list_append(&slab->free, entry);
+    struct slab_item *returned = (struct slab_item *)item;
+    returned->next = slab->free_items;
+    slab->free_items = returned;
+
     slab->free_item_count++;
 
     /* Move this slab to the head of the list */
