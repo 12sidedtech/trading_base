@@ -194,6 +194,11 @@ aresult_t config_get(struct config *cfg, struct config *atm, const char *item_id
     TSL_ASSERT_ARG('\0' != *item_id);
 
     path = strdup(item_id);
+    if (NULL == path) {
+        ret = A_E_NOMEM;
+        goto done;
+    }
+
     item = (json_t *)cfg->atom_nested;
     current_pos = path;
 
