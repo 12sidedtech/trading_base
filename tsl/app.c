@@ -182,7 +182,7 @@ done:
 aresult_t app_bind_cpu_core(int core_id)
 {
     aresult_t ret = A_OK;
-    struct cpu_mask *msk = NULL;
+    struct cpu_mask *msk CAL_CLEANUP(cpu_mask_destroy) = NULL;
 
     TSL_ASSERT_ARG(core_id >= 0);
 
