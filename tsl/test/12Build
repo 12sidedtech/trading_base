@@ -1,6 +1,8 @@
 OBJ=test_alloc.o test_cpumask.o test_heap.o test_main.o \
 		test_rbtree.o test_refcnt.o test_speed.o test_time.o \
-		test_offload.o test_megaqueue.o test_config.o
+		test_offload.o test_megaqueue.o test_config.o \
+        test_logalloc.o test_hash_table.o
+
 TARGET_TYPE=app
 TARGET=test_tsl
-LIBS=tsl
+LIBS=tsl jansson

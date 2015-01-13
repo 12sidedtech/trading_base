@@ -76,6 +76,21 @@ struct list_entry {
 #define LIST_NEXT(list_ptr) ((list_ptr)->next)
 
 /**
+ * Get the previous item from a list
+ */
+#define LIST_PREV(list_ptr) ((list_ptr)->prev)
+
+/**
+ * Get the next item of the list as the given type. MUST check if list is empty before using.
+ */
+#define LIST_NEXT_TYPE(ptr, type, memb) LIST_ITEM(LIST_NEXT(ptr), type, memb)
+
+/**
+ * Get the previous item of the list as the given type. MUST check if list is empty before using.
+ */
+#define LIST_PREV_TYPE(ptr, type, memb) LIST_ITEM(LIST_PREV(ptr), type, memb)
+
+/**
  * \brief Iterate through all items in a linked list
  * Iterate through a linked list and populate the provided iterator
  * with the current active list item. Behaves like a generic for
@@ -102,6 +117,22 @@ struct list_entry {
  */
 #define list_for_each_type(iterator, head, member)                               \
     for (iterator = LIST_ITEM((head)->next, __typeof__(*iterator), member);          \
+         &iterator->member != (head);                                            \
+         iterator = LIST_ITEM((iterator)->member.next, __typeof__(*iterator), member))
+
+/**
+ * \brief Iterate through all items in a linked list, by type
+ * Iterate through a linked list and populate the provided iterator,
+ * a pointer of the specified container type, with a pointer to
+ * the item in the list. Start the iteration at item start.
+ * \param iterator an iterator of the type in which the struct list is embedded
+ * \param start the first item to start the search from
+ * \param head the struct list_head in question
+ * \param member the name of the struct list_head member
+ * \note If you want to destroy or remove members from the list, don't use this iterator
+ */
+#define list_for_each_type_start(iterator, start, head, member)                               \
+    for (iterator = LIST_ITEM(start, __typeof__(*iterator), member);          \
          &iterator->member != (head);                                            \
          iterator = LIST_ITEM((iterator)->member.next, __typeof__(*iterator), member))
 
@@ -150,6 +181,16 @@ void __list_add(struct list_entry *_new,
     _new->prev = prev;
     next->prev = _new;
     _new->next = next;
+}
+
+/**
+ * \brief Insert an item in the list after the specified item pos.
+ * Given a prior item, insert the given item into the list after the given item.
+ */
+static inline
+void list_insert_at(struct list_entry *pos, struct list_entry *_new)
+{
+    __list_add(_new, pos, pos->next);
 }
 
 /**

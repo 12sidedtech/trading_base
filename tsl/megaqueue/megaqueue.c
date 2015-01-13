@@ -1,31 +1,3 @@
-/*
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-
-  - Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #include <tsl/megaqueue/megaqueue.h>
 
 #include <tsl/errors.h>
@@ -38,15 +10,14 @@
 #include <unistd.h>
 
 #include <ck_pr.h>
-
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #define MB(x) KB((x) * 1024)
 #define KB(x) ((x) * 1024)
-
 
 aresult_t megaqueue_close(struct megaqueue *queue, int unlink)
 {
@@ -149,11 +120,7 @@ aresult_t __megaqueue_prefault_range(void *base, size_t bytes, size_t page_size)
  * \see megaqueue_consumer_open
  * \see megaqueue_producer_open
  */
-aresult_t megaqueue_open(struct megaqueue *queue,
-                         int mode,
-                         const char *queue_name,
-                         size_t obj_size,
-                         size_t obj_count)
+aresult_t megaqueue_open(struct megaqueue *queue, int mode, const char *queue_name, size_t obj_size, size_t obj_count)
 {
     aresult_t ret = A_OK;
     char *queue_name_alloc = NULL;
@@ -192,6 +159,16 @@ aresult_t megaqueue_open(struct megaqueue *queue,
             ret = A_E_INVAL;
             goto done;
         }
+    } else {
+        struct megaqueue_header read_header;
+        if (0 > read(qfd, (void *)&read_header, sizeof(read_header))) {
+            PDIAG("Failed to read %zu bytes from the megaqueue header", sizeof(read_header));
+            ret = A_E_INVAL;
+            goto done;
+        }
+
+        queue_size = read_header.object_count * read_header.object_size + page_size;
+        obj_count = read_header.object_count;
     }
 
     /* Map the queue into memory */
@@ -210,10 +187,12 @@ aresult_t megaqueue_open(struct megaqueue *queue,
         size_t prefetch = queue_size > MB(512) ? MB(512) : ((queue_size + page_size - 1));
         prefetch = (prefetch + page_size - 1) & ~(page_size - 1);
         DIAG("Prefetching %zu bytes of megaqueue", prefetch);
+
         if (madvise(mapping, prefetch, MADV_WILLNEED) < 0) {
             /* Not strictly required, but performance will suffer */
             PDIAG("WARNING: failed to madvise(2) for MADV_WILLNEED.");
         }
+
         if (AFAILED(__megaqueue_prefault_range(mapping, prefetch, page_size))) {
             PDIAG("Warning: failed to prefault megaqueue directly.");
         }
@@ -222,11 +201,20 @@ aresult_t megaqueue_open(struct megaqueue *queue,
     } else {
         /* Check the header */
         struct megaqueue_header *hdr = mapping;
-        if (hdr->object_size != obj_size || hdr->object_count != obj_count) {
-            DIAG("Megaqueue parameters do not match application parameters.");
+        if (hdr->object_size < obj_size) {
+            DIAG("Object size in queue does not match application expectation (got %zu, expected %zu).", hdr->object_size, obj_size);
             ret = A_E_INVAL;
             goto done;
         }
+
+        if (0 == hdr->object_count) {
+            DIAG("Megaqueue mapping is invalid.");
+            ret = A_E_INVAL;
+            goto done;
+        }
+
+        /* Set the object size based on what is in the queue descriptor */
+        obj_count = hdr->object_count;
     }
 
     queue->region = mapping;
@@ -256,24 +244,6 @@ done:
         }
 
     }
-
-    return ret;
-}
-
-aresult_t megaqueue_consumer_open(struct megaqueue_consumer **pconsumer,
-                                  const char *queue_name,
-                                  size_t obj_size,
-                                  size_t obj_count)
-{
-    aresult_t ret = A_OK;
-
-    return ret;
-}
-
-aresult_t megaqueue_producer_open(struct megaqueue_producer **pproducer,
-                                  const char *queue_name)
-{
-    aresult_t ret = A_OK;
 
     return ret;
 }

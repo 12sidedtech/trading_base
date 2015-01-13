@@ -139,6 +139,9 @@ done:
     return ret;
 }
 
+/**
+ * Return the number of entries populated in the work queue
+ */
 static inline
 aresult_t work_queue_fill(struct work_queue *queue, unsigned int *fill)
 {

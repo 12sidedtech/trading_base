@@ -1,31 +1,3 @@
-/*
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-
-  - Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #ifndef __INCLUDED_MEGAQUEUE_MEGAQUEUE_H__
 #define __INCLUDED_MEGAQUEUE_MEGAQUEUE_H__
 
@@ -37,10 +9,6 @@
  * A megaqueue filename is of the form "megaqueue_[qdesc]"
  */
 #define MEGAQUEUE_NAME_PREFIX       "megaqueue_"
-/**
- * A megaqueue consumer filename is "mqconsumer_[qdesc]_[consumername]"
- */
-#define MEGAQUEUE_CONSUMER_PREFIX   "mqconsumer_"
 
 /**
  * Contents of the header page of the Megaqueue
@@ -50,6 +18,8 @@ struct megaqueue_header {
     uint64_t head CAL_CACHE_ALIGNED;
     /** Tail of the Megaqueue for the sensitive listener */
     uint64_t tail CAL_CACHE_ALIGNED;
+    /** Deletion pointer for the Megaqueue */
+    uint64_t _delete CAL_CACHE_ALIGNED;
     /* PID of the process that is the producer */
     uint64_t producer_pid CAL_CACHE_ALIGNED;
     /* Size of an object in the Megaqueue */
@@ -57,29 +27,6 @@ struct megaqueue_header {
     /* Maximum count of objects in the Megaqueue */
     uint64_t object_count;
 } CAL_CACHE_ALIGNED;
-
-enum megaqueue_consumer_state {
-    CONSUMER_STATE_ACTIVE,
-    CONSUMER_STATE_SHUTDOWN
-};
-
-/**
- * The current state of the Megaqueue Consumer in question
- */
-struct megaqueue_consumer_state_block {
-    /** Where this consumer currently is in the megaqueue */
-    uint64_t tail CAL_CACHE_ALIGNED;
-    /** The current state of this megaqueue listener 
-     * \see enum megaqueue_consumer_state
-     * */
-    int state CAL_CACHE_ALIGNED;
-
-    /* ----- Less Frequently Accessed Items ----- */
-    /** PID of this consumer process */
-    uint32_t pid;
-    /** Whether or not this process is critical (alert on failure) or passive */
-    int critical;
-};
 
 struct megaqueue {
     /** Size of an object in the megaqueue, in bytes */
@@ -102,22 +49,17 @@ struct megaqueue {
     int fd;
 };
 
-struct megaqueue_consumer {
-    /** Current read head of the megaqueue */
-    void *read_head;
+#define MEGAQUEUE_SAFE_INIT_EMPTY { .writable_start = NULL, .region = NULL, .region_size = NULL, .rgn_name = NULL, .hdr = NULL, .fd = -1 }
 
-    /** The position of the current read location */
-    size_t read_pos;
-
-    struct megaqueue mq;
-};
-
-struct megaqueue_producer {
-    /** Current write head of the megaqueue */
-    void *write_head;
-
-    struct megaqueue mq;
-};
+#define MEGAQUEUE_EMPTY(x) \
+    do { \
+        (x)->writable_start = NULL; \
+        (x)->region = NULL; \
+        (x)->region_size = 0; \
+        (x)->rgn_name = NULL; \
+        (x)->hdr = NULL; \
+        (x)->fd = -1; \
+    } while (0)
 
 aresult_t megaqueue_open(struct megaqueue *queue,
                          int mode,
@@ -126,11 +68,6 @@ aresult_t megaqueue_open(struct megaqueue *queue,
                          size_t obj_count);
 
 aresult_t megaqueue_close(struct megaqueue *queue, int unlink);
-
-aresult_t megaqueue_consumer_open(struct megaqueue_consumer **queue,
-                                  const char *queue_name,
-                                  size_t obj_size,
-                                  size_t obj_count);
 
 /* Internal functions for managing the megaqueue */
 static inline
@@ -142,8 +79,15 @@ aresult_t megaqueue_next_slot(struct megaqueue *queue, void **slot);
 static inline
 aresult_t megaqueue_read_next_slot(struct megaqueue *queue, void **slot);
 
+/* WARNING: megaqueue_read_advance SHOULD NEVER BE USED ALONGSIDE megaqueue_delete_advance! */
 static inline
 aresult_t megaqueue_read_advance(struct megaqueue *queue);
+
+static inline
+aresult_t megaqueue_read_only_advance(struct megaqueue *queue);
+
+static inline
+aresult_t megaqueue_delete_advance(struct megaqueue *queue);
 
 #include <tsl/megaqueue/megaqueue_priv.h>
 

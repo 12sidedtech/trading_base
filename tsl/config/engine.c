@@ -1,31 +1,3 @@
-/*
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-
-  - Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #include <tsl/config/engine.h>
 
 #include <tsl/diag.h>
@@ -162,6 +134,48 @@ done:
         json_decref(file_json);
         file_json = NULL;
     }
+
+    return ret;
+}
+
+aresult_t config_add_string(struct config *cfg, const char *json_string)
+{
+    aresult_t ret = A_OK;
+    json_t *string_json = NULL;
+    json_error_t err;
+
+    TSL_ASSERT_ARG(NULL != cfg);
+    TSL_ASSERT_ARG(NULL != json_string);
+    TSL_ASSERT_ARG('\0' != *json_string);
+
+    if (cfg->atom_type != CONFIG_ATOM_NESTED) {
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    TSL_ASSERT_ARG(NULL != cfg->atom_nested);
+
+    string_json = json_loads(json_string, JSON_REJECT_DUPLICATES, &err);
+
+    if (NULL == string_json) {
+        CONFIG_MSG(SEV_FATAL, "Parse", "Error during JSON load & parse: %s (at line %d, source %s)", err.text, err.line, err.source);
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+    if (0 > json_object_update((json_t *)cfg->atom_nested, string_json)) {
+        DIAG("Error merging in file JSON string into given configuration object");
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+done:
+    if (NULL != string_json) {
+        json_decref(string_json);
+        string_json = NULL;
+    }
+
+
 
     return ret;
 }

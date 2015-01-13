@@ -30,6 +30,8 @@
 #include <tsl/errors.h>
 #include <tsl/diag.h>
 
+#include <tsl/config/engine.h>
+
 #include <stdlib.h>
 
 #include <sched.h>
@@ -43,6 +45,94 @@ struct cpu_mask {
     long num_cpus;
     long size;
 };
+
+aresult_t cpu_mask_from_config(struct cpu_mask **pmask, struct config *cfg, const char *field_name)
+{
+    aresult_t ret = A_OK;
+
+    struct cpu_mask *msk = NULL;
+    int core_id = -1;
+    struct config core_arr;
+
+    TSL_ASSERT_ARG(NULL != pmask);
+    TSL_ASSERT_ARG(NULL != cfg);
+    TSL_ASSERT_ARG(NULL != field_name);
+
+    if (AFAILED(ret = cpu_mask_create(&msk))) {
+        goto done;
+    }
+
+    if (!AFAILED(ret = config_get_integer(cfg, &core_id, field_name))) {
+        if (0 > core_id) {
+            DIAG("Negative core ID specified, aborting.");
+            goto done;
+        }
+
+        if (AFAILED(ret = cpu_mask_set(msk, core_id))) {
+            DIAG("Failed to set CPU Core mask: %d", core_id);
+            goto done;
+        }
+
+    } else if (!AFAILED(ret = config_get(cfg, &core_arr, field_name))) {
+        size_t nr_entries = 0;
+        bool failed = false;
+        size_t num_set = 0;
+
+        if (AFAILED(ret = config_array_length(&core_arr, &nr_entries))) {
+            DIAG("Array is malformed.");
+            goto done;
+        }
+
+        if (0 == nr_entries) {
+            DIAG("Array is empty, need to specify an array of CPU core ID integers.");
+            goto done;
+        }
+
+        for (size_t i = 0; i < nr_entries; i++) {
+            int core_id = -1;
+            if (AFAILED(ret = config_array_at_integer(&core_arr, &core_id, i))) {
+                DIAG("Array entry %zu is not an integer, skipping.", i);
+                failed = true;
+                continue;
+            }
+
+            if (0 > core_id) {
+                DIAG("Core ID at %zu is invalid (%d is less than 0)", i, core_id);
+                failed = true;
+                continue;
+            }
+
+            if (AFAILED(ret = cpu_mask_set(msk, core_id))) {
+                DIAG("Invalid core ID specified: %d at offset %zu", core_id, i);
+                failed = true;
+                continue;
+            }
+
+            num_set++;
+        }
+
+        if (true == failed || 0 == num_set) {
+            DIAG("Failed to populate CPU core, malformed array entries were found.");
+            ret = A_E_INVAL;
+            goto done;
+        }
+    } else {
+        DIAG("Failed to find CPU core configuration field '%s'", field_name);
+        ret = A_E_NOENT;
+        goto done;
+    }
+
+done:
+    if (AFAILED(ret)) {
+        if (NULL != msk) {
+            cpu_mask_destroy(&msk);
+        }
+    } else {
+        *pmask = msk;
+    }
+
+    return ret;
+}
 
 aresult_t cpu_mask_create(struct cpu_mask **mask)
 {

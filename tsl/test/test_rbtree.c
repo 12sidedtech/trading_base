@@ -1,40 +1,14 @@
-/*
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-
-  - Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #include <tsl/test/helpers.h>
 #include <tsl/rbtree.h>
 #include <tsl/assert.h>
 #include <tsl/basic.h>
+#include <tsl/time.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 static int test_rbtree_compare(void *lhs, void *rhs)
 {
@@ -57,7 +31,7 @@ struct test_rbtree_node {
 
 #define COLOR_BLACK         0x0
 #define COLOR_RED           0x1
-#define _TEST_RBTREE_DUMP_TREE
+//#define _TEST_RBTREE_DUMP_TREE
 //#define _TEST_RBTREE_PRINTING
 
 void dump_rb_tree(struct test_rbtree_node *nodes, size_t num_nodes)
@@ -171,10 +145,10 @@ int traverse_rbtree(struct rb_tree *my_tree)
         if (prev == node->left)
         {
             if (prev_key != NULL) {
-                TEST_ASSERT(my_tree->compare(prev_key, node->key) < 0);
+                TEST_ASSERT(my_tree->compare(my_tree->state, prev_key, node->key) < 0);
             }
 #ifdef _TEST_RBTREE_PRINTING
-            printf("%d ", node->key);
+            printf("%zu ", (size_t)node->key);
 #endif
             prev_key = node->key;
 
@@ -206,6 +180,7 @@ int traverse_rbtree(struct rb_tree *my_tree)
  * 5. Color-scheme (assert_rbtree)
  * 6. Print (dump_rb_tree)
  * 7. Traverse and sorting (traverse_rbtree)
+ * 7.1 Traverse another way (rb_tree_traverse) 
  * 8. Find (rb_tree_find)
  * 9. Destroy (rb_tree_destroy) on non-empty tree
  * 10. Height/black_height (assert_rbtree)
@@ -238,11 +213,49 @@ TEST_DECL(test_rbtree_lifecycle)
     }
     traverse_rbtree(&my_tree);
 
+    struct treestate {
+      int iterations;
+      int max_iterations;
+    };
 
+    struct treestate mystate = { 0, 5 };
+    struct treestate myother = { 0, 10000};
+
+    rb_control_t checkiters(struct rb_tree_node* node, void* state) {
+      struct treestate* st = (struct treestate*) state;
+
+      st->iterations += 1;
+//#     ifdef _TEST_RBTREE_PRINTING
+//        printf("At iteration %i\n", st->iterations);
+//#     endif
+
+      test_rbtree_print(node);  
+      if (st->iterations >= st->max_iterations ) {
+        return RB_STOP;
+      }
+      
+      return RB_CONTINUE;
+    }
+    rb_control_t res = RB_CONTINUE;
+    res = rb_tree_traverse(&my_tree, checkiters, (void*) &mystate); 
+    TEST_ASSERT_EQUALS(res, RB_STOP);
+    TEST_ASSERT_EQUALS(mystate.iterations, mystate.max_iterations); 
+
+    // uint64_t start = time_get_time();
+    res = rb_tree_traverse(&my_tree, checkiters, (void*) &myother); 
+    // uint64_t end = time_get_time();
+    
+    TEST_ASSERT_EQUALS(res, RB_CONTINUE);
+    TEST_ASSERT_EQUALS(myother.iterations, 30);
+#   ifdef _TEST_RBTREE_PRINTING
+      printf("Traversal took %zu nanoseconds.", end- start);
+#   endif
+    
+      
     struct rb_tree_node* found_node;
     void *key_available = (void*)((int64_t)(5) + (5 % 2 ? 42 : -42));
     TEST_ASSERT_EQUALS(rb_tree_find(&my_tree, key_available, &found_node), A_OK);
-    TEST_ASSERT((&my_tree)->compare(found_node->key, key_available) == 0);
+    TEST_ASSERT((&my_tree)->compare(my_tree.state, found_node->key, key_available) == 0);
     
     void *key_not_available = (void*)((int64_t)(23) + (35 % 2 ? 42 : -42)) + 1;
     TEST_ASSERT_NOT_EQUALS(rb_tree_find(&my_tree, key_not_available, &found_node), A_OK);

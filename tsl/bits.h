@@ -95,7 +95,7 @@ uint64_t tsl_round_up_2_64(uint64_t value)
     v |= v >> 4;
     v |= v >> 8;
     v |= v >> 16;
-    v |= v >> 32; 
+    v |= v >> 32;
     v++;
     return v;
 }
@@ -123,6 +123,15 @@ static inline CAL_AGGRESSIVE_INLINE
 size_t tsl_bit_scan_rev_64(uint64_t val)
 {
     return sizeof(val) * __CHAR_BIT__ - 1 - (size_t)__builtin_clzl(val);
+}
+
+/**
+ * \brief Count the population of bits in the given uint64_t
+ */
+static inline CAL_AGGRESSIVE_INLINE
+size_t tsl_pop_count_64(uint64_t val)
+{
+    return (size_t)__builtin_popcountll(val);
 }
 
 #ifdef __cplusplus

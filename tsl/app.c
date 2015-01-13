@@ -39,6 +39,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <execinfo.h>
+
 #define APP_STATE_RUNNING               0
 #define APP_STATE_SHUTDOWN_REQUESTED    1
 #define APP_STATE_SHUTDOWN_FORCED       2
@@ -51,6 +53,21 @@ const char *app_name_str = NULL;
 
 static
 app_sigint_handler_t __app_sigint_handler = NULL;
+
+/**
+ * Dump the backtrace for diagnostic purposes.
+ */
+static
+void segv_handler(int signal)
+{
+    void *symbols[20];
+    size_t len = 0;
+    len = backtrace(symbols, BL_ARRAY_ENTRIES(symbols));
+    printf("\nsegmentation fault - backtracing %zu frames.\n", len);
+    backtrace_symbols_fd(symbols, len, STDERR_FILENO);
+    printf("aborting.\n");
+    abort();
+}
 
 static
 void app_sigint_handler(int signal)
@@ -67,6 +84,27 @@ void app_sigint_handler(int signal)
         __app_sigint_handler();
     }
 }
+
+static
+aresult_t _segv_handler_install(void)
+{
+    aresult_t ret = A_OK;
+    struct sigaction sa;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = segv_handler;
+
+    if (0 > sigaction(SIGSEGV, &sa, NULL)) {
+        PDIAG("Failed to install SEGV handler.");
+        ret = A_E_INVAL;
+        goto done;
+    }
+
+done:
+    return ret;
+}
+
+APP_SUBSYSTEM(sigsegv, _segv_handler_install, NULL);
 
 int app_running(void)
 {

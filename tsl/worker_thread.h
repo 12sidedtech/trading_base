@@ -38,6 +38,7 @@ extern "C" {
 
 /* Forward declarations */
 struct thread;
+struct cpu_mask;
 
 /** \file worker_thread.h
  * This file contains the declarations and state definitions for how non-offload worker
@@ -136,6 +137,19 @@ struct worker_thread {
  * \return A_OK on success, an error code otherwise
  */
 aresult_t worker_thread_new(struct worker_thread *thr, worker_thread_work_func_t work_func, unsigned int cpu_core);
+
+/**
+ * Create a new worker thread, binding the thread to the cores specified in the given CPU mask.
+ *
+ * \param thr The memory to populate with information about the worker thread.
+ * \pram work_func The worker function to be called once the thread has started up.
+ * \param pmsk The CPU core mask to bind this thread to, passed by reference. If this function returns successfully,
+ *             the object is owned by the thread object, pmsk set to NULL. Otherwise, it is the caller's responsibility
+ *             to clean up. 
+ *
+ * \return A_OK on success, an error code otherwise.
+ */
+aresult_t worker_thread_new_mask(struct worker_thread *thr, worker_thread_work_func_t work_func, struct cpu_mask **pmsk);
 
 /**
  * Request that a worker thread shut itself down.

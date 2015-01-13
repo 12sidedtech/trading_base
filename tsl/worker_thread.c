@@ -34,7 +34,9 @@
 #include <tsl/errors.h>
 #include <tsl/cpumask.h>
 #include <tsl/threading.h>
+#include <tsl/panic.h>
 
+#include <pthread.h>
 #include <string.h>
 
 static
@@ -60,25 +62,22 @@ done:
     return ret;
 }
 
-aresult_t worker_thread_new(struct worker_thread *thr, worker_thread_work_func_t work_func, unsigned int cpu_core)
+aresult_t worker_thread_new_mask(struct worker_thread *thr, worker_thread_work_func_t work_func, struct cpu_mask **pmsk)
 {
     aresult_t ret = A_OK;
+
     struct cpu_mask *msk = NULL;
 
     TSL_ASSERT_ARG(NULL != thr);
     TSL_ASSERT_ARG(NULL != work_func);
+    TSL_ASSERT_ARG(NULL != pmsk);
+    TSL_ASSERT_ARG(NULL != *pmsk);
+
+    msk = *pmsk;
 
     memset(thr, 0, sizeof(*thr));
 
     thr->work_func = work_func;
-
-    if (AFAILED(ret = cpu_mask_create(&msk))) {
-        goto done;
-    }
-
-    if (AFAILED(ret = cpu_mask_set(msk, cpu_core))) {
-        goto done;
-    }
 
     thr->st = WORKER_THREAD_STATE_STARTING_UP;
 
@@ -92,16 +91,45 @@ aresult_t worker_thread_new(struct worker_thread *thr, worker_thread_work_func_t
         goto done;
     }
 
+    *pmsk = NULL;
+
 done:
     if (AFAILED(ret)) {
         if (NULL != thr->thr) {
             thread_destroy(&thr->thr);
-        } else {
-            if (NULL != msk) {
-                cpu_mask_destroy(&msk);
-            }
         }
     }
+
+    return ret;
+}
+
+aresult_t worker_thread_new(struct worker_thread *thr, worker_thread_work_func_t work_func, unsigned int cpu_core)
+{
+    aresult_t ret = A_OK;
+    struct cpu_mask *msk = NULL;
+
+    TSL_ASSERT_ARG(NULL != thr);
+    TSL_ASSERT_ARG(NULL != work_func);
+
+    if (AFAILED(ret = cpu_mask_create(&msk))) {
+        goto done;
+    }
+
+    if (AFAILED(ret = cpu_mask_set(msk, cpu_core))) {
+        goto done;
+    }
+
+    if (AFAILED(ret = worker_thread_new_mask(thr, work_func, &msk))) {
+        goto done;
+    }
+
+done:
+    if (AFAILED(ret)) {
+        if (NULL != msk) {
+            cpu_mask_destroy(&msk);
+        }
+    }
+
     return ret;
 }
 
@@ -125,14 +153,26 @@ aresult_t worker_thread_delete(struct worker_thread *thr)
 {
     aresult_t ret = A_OK;
 
+    int state = 0;
+
     TSL_ASSERT_ARG(NULL != thr);
 
-    if (WORKER_THREAD_STATE_SHUTDOWN != ck_pr_load_int(&thr->st)) {
+    state = ck_pr_load_int(&thr->st);
+
+    if (!(WORKER_THREAD_STATE_SHUTDOWN == state || WORKER_THREAD_STATE_SHUTDOWN_REQUESTED == state) ) {
         ret = A_E_BUSY;
         goto done;
     }
 
     if (NULL != thr->thr) {
+        aresult_t thr_ret = A_OK;
+
+        if (AFAILED(ret = thread_join(thr->thr, &thr_ret))) {
+            DIAG("Failed to join worker thread to parent thread.");
+            goto done;
+        }
+
+        /* Now that the thread has been JOIN'd to the parent, destroy its resources */
         thread_destroy(&thr->thr);
     }
 

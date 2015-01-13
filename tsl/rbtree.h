@@ -91,12 +91,35 @@ struct rb_tree_node {
 };
 
 /**
+ * Pointer to a comparison function that allows passing along state.
+ * Return values are interpreted as follows:
+ *  (0, +inf] if lhs > rhs
+ *  0 if lhs == rhs
+ *  [-inf, 0) if lhs < rhs
+ */
+typedef int (*rb_cmp_func_ex_t)(void *state, void *lhs, void *rhs);
+
+/**
  * Pointer to a function to compare two keys, and returns as follows:
  *  (0, +inf] if lhs > rhs
  *  0 if lhs == rhs
  *  [-inf, 0) if lhs < rhs
  */
 typedef int (*rb_cmp_func_t)(void *lhs, void *rhs);
+
+typedef enum rb_control__ {
+  RB_STOP,
+  RB_CONTINUE
+} rb_control_t;
+
+/**
+ *
+ * Pointer to function to be folded across the tree: 
+ *
+ * \param node The node currently being visited
+ * \param state User provided state to be carried through each visit
+ */
+typedef rb_control_t (*rb_traversal_func_t) (struct rb_tree_node* node, void* state);
 
 /**
  * Structure representing an RB tree's associated state. Contains all
@@ -113,12 +136,17 @@ struct rb_tree {
     /**
      * Predicate used for traversing the tree
      */
-    rb_cmp_func_t compare;
+    rb_cmp_func_ex_t compare;
 
     /**
      * The left-most node of the rb-tree
      */
     struct rb_tree_node *rightmost;
+
+    /**
+     * Private state that can be used by the rb-tree owner
+     */
+    void *state;
 };
 
 /**@} rb_tree_state */
@@ -128,6 +156,18 @@ struct rb_tree {
  * inluding lifecycle functions and member manipulation and state checking functions.
  * @{
  */
+/**
+ * \brief Construct a new, empty red-black tree, with extended state
+ * Given a region of memory at least the size of a struct rb_tree to
+ * store the red-black tree metadata, update it to contain an initialized, empty
+ * red-black tree, with given private state.
+ * \param tree Pointer to the new tree.
+ * \param compare Function used to traverse the tree.
+ * \param state The private state to be passed to the compare function
+ * \return RB_OK on success, an error code otherwise
+ */
+aresult_t rb_tree_new_ex(struct rb_tree *tree, rb_cmp_func_ex_t compare, void *state);
+
 /**
  * \brief Construct a new, empty red-black tree
  * Given a region of memory at least the size of a struct rb_tree to
@@ -329,6 +369,60 @@ aresult_t rb_tree_find_predecessor(struct rb_tree *tree,
 
 done:
     return ret;
+}
+
+/**
+ * Helper inner function for the tree recursion
+ */
+static inline
+rb_control_t __rb_tree_traverse_node(struct rb_tree_node *node,
+                                     rb_traversal_func_t cb,
+                                     void* state)
+{
+  rb_control_t ret = RB_CONTINUE;
+
+  if (NULL == node) 
+  {
+    //we stop traversing down this branch, but we don't stop traversing
+    //so return continue
+    return ret; 
+  }
+
+  if (RB_CONTINUE != (ret = ((*cb)(node, state)))) {
+    return ret;
+  }
+
+  if (RB_CONTINUE != (ret = __rb_tree_traverse_node(node->left, cb, state)))
+  {
+    return ret;
+  }
+
+  return __rb_tree_traverse_node(node->right, cb, state);
+
+}
+
+/**
+ * \brief applies a function across the entire tree recursively
+ *
+ * \note, this is recursive, and it is not tail recursive, so don't run it on a massive
+ * tree or you will blow your stack. This traversal also has an early out mechanism
+ * depending on what is returned from the cb node RB_CONTINUE will continue
+ * RB_STOP will buy the farm. 
+ *
+ * Because we want to support the early out semantic, the traversal order is 
+ * depth-first pre-order. Not that it matters, because we're using central, mutable state
+ *
+ * \param tree The rb_tree to be traversed
+ * \param cb  The callback function to be run
+ * \param state  User provided state to be passed to the callback
+ *
+ */
+static inline
+rb_control_t rb_tree_traverse(struct rb_tree* tree, 
+                           rb_traversal_func_t cb,
+                           void* state)
+{
+  return __rb_tree_traverse_node(tree->root, cb, state);
 }
 
 /**@} rb_functions */

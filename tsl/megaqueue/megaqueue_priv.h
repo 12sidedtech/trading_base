@@ -1,31 +1,3 @@
-/*
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-
-  - Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #ifndef __INCLUDED_MEGAQUEUE_MEGAQUEUE_PRIV_H__
 #define __INCLUDED_MEGAQUEUE_MEGAQUEUE_PRIV_H__
 
@@ -35,18 +7,18 @@
 #include <ck_pr.h>
 
 static inline
-int __megaqueue_is_full(struct megaqueue *queue)
+bool __megaqueue_is_full(struct megaqueue *queue)
 {
     struct megaqueue_header *hdr = queue->hdr;
 
     size_t head_offset = ck_pr_load_64(&hdr->head);
-    size_t tail_offset = ck_pr_load_64(&hdr->tail);
+    size_t delete_offset = ck_pr_load_64(&hdr->_delete);
 
-    return tail_offset == ((head_offset + 1) % queue->object_count);
+    return delete_offset == ((head_offset + 1) % queue->object_count);
 }
 
 static inline
-int __megaqueue_is_empty(struct megaqueue *queue)
+bool __megaqueue_is_empty(struct megaqueue *queue)
 {
     struct megaqueue_header *hdr = queue->hdr;
 
@@ -57,9 +29,14 @@ int __megaqueue_is_empty(struct megaqueue *queue)
 }
 
 static inline
-int __megaqueue_waiting(struct megaqueue *queue)
+bool __megaqueue_can_delete(struct megaqueue *queue)
 {
-    return !(__megaqueue_is_full(queue) || __megaqueue_is_empty(queue));
+    struct megaqueue_header *hdr = queue->hdr;
+
+    size_t tail_offset = ck_pr_load_64(&hdr->tail);
+    size_t delete_offset = ck_pr_load_64(&hdr->_delete);
+
+    return tail_offset == delete_offset;
 }
 
 /**
@@ -144,8 +121,38 @@ aresult_t megaqueue_read_next_slot(struct megaqueue *queue, void **slot)
     return ret;
 }
 
+/**
+ * Legacy -- advance both the read and delete pointers in lockstep
+ */
 static inline
 aresult_t megaqueue_read_advance(struct megaqueue *queue)
+{
+    aresult_t ret = A_OK;
+    struct megaqueue_header *hdr = NULL;
+    size_t offset = 0;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != queue);
+
+    hdr = queue->hdr;
+
+    if (!__megaqueue_is_empty(queue)) {
+        offset = ck_pr_load_64(&hdr->tail);
+        offset = (offset + 1) % queue->object_count;
+
+        ck_pr_store_64(&hdr->tail, offset);
+        ck_pr_store_64(&hdr->_delete, offset);
+    } else {
+        ret = A_E_EMPTY;
+    }
+
+    return ret;
+}
+
+/**
+ * Advance the read pointer - does not muck with the delete pointer
+ */
+static inline
+aresult_t megaqueue_read_only_advance(struct megaqueue *queue)
 {
     aresult_t ret = A_OK;
     struct megaqueue_header *hdr = NULL;
@@ -165,7 +172,32 @@ aresult_t megaqueue_read_advance(struct megaqueue *queue)
     }
 
     return ret;
+}
 
+/**
+ * Advance the deletion pointer - stops advancing if the read pointer == the delete pointer
+ */
+static inline
+aresult_t megaqueue_delete_advance(struct megaqueue *queue)
+{
+    aresult_t ret = A_OK;
+    struct megaqueue_header *hdr = NULL;
+    size_t offset = 0;
+
+    TSL_ASSERT_ARG_DEBUG(NULL != queue);
+
+    hdr = queue->hdr;
+
+    if (!__megaqueue_can_delete(queue)) {
+        offset = ck_pr_load_64(&hdr->_delete);
+        offset = (offset + 1) % queue->object_count;
+
+        ck_pr_store_64(&hdr->_delete, offset);
+    } else {
+        ret = A_E_EMPTY;
+    }
+
+    return ret;
 }
 
 #endif /* __INCLUDED_MEGAQUEUE_MEGAQUEUE_PRIV_H__ */

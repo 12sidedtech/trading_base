@@ -40,6 +40,8 @@
 
 #include <pthread.h>
 
+#include <ck_pr.h>
+
 enum thread_state {
     THREAD_STATE_IDLE,          /** Thread is idle, not running */
     THREAD_STATE_RUNNING,       /** Thread is running, status quo */
@@ -133,7 +135,7 @@ void *__thread_wrapper_func(void *thread_info)
 done:
     thread->state = THREAD_STATE_TERMINATED;
 
-    return (void *)(ssize_t)ret;
+    pthread_exit((void *)(ssize_t)ret);
 }
 
 aresult_t thread_start(struct thread *thread,
@@ -160,12 +162,14 @@ aresult_t thread_join(struct thread *thread,
                       aresult_t *result)
 {
     aresult_t ret = A_OK;
+    int state = 0;
 
     TSL_ASSERT_ARG(thread != NULL);
 
-    if (thread->state != THREAD_STATE_TERMINATED) {
-        ret = A_E_BUSY;
-        goto done;
+    state = ck_pr_load_int((int *)&thread->state);
+
+    if (state == THREAD_STATE_TERMINATED) {
+        DIAG("Warning: about to pthread_join a thread that hasn't terminated, hope you had other state checks...");
     }
 
     void *res = NULL;

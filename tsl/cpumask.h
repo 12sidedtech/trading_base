@@ -35,7 +35,9 @@ extern "C" {
 #include <tsl/errors.h>
 #include <stddef.h>
 
+/* Forward declare opaque structures */
 struct cpu_mask;
+struct config;
 
 /**
  * Create a new, empty CPU mask
@@ -108,6 +110,15 @@ aresult_t cpu_mask_destroy(struct cpu_mask **mask);
  * \return A_OK on success, an error code otherwise
  */
 aresult_t cpu_mask_apply(struct cpu_mask *mask);
+
+/**
+ * Generate a new CPU mask from a configuration object.
+ *
+ * The configuration field specified in field_name must be one of an integer
+ * or an array of integers. An appropriate CPU mask will be generated and returned
+ * in pmask, but it is up to the application to apply the mask.
+ */
+aresult_t cpu_mask_from_config(struct cpu_mask **pmask, struct config *cfg, const char *field_name);
 
 #ifdef __cplusplus
 } // extern "C"

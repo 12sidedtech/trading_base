@@ -53,7 +53,22 @@ void panic(const char *file, int line, const char *str, ...)
         hdlr->func();
     }
 
-    fprintf(stderr, "PANIC! PANIC! PANIC!\n");
+    fprintf(stderr,
+        "         _\n"
+        "        /_/_      .'''.\n"
+        "     =O(_)))) ...'     `.\n"
+        "        \\_\\              `.    .'''\n"
+        "                           `..'\n"
+        "\n"
+        "                 _\n"
+        "                /_/_      .'''.\n"
+        "             =O(_)))) ...'     `.\n"
+        "                \\_\\              `.    .'''\n"
+        "                                   `..'\n"
+        "\n"
+        "BEES. OH GOD, BEES EVERYWHERE"
+        "\n"
+        "Congratulations, your TSL Application PANICked. Here's what I know:\n");
 
     va_start(ap, str);
     vfprintf(stderr, str, ap);

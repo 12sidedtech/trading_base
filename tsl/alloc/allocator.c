@@ -41,6 +41,7 @@
 #include <stddef.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <sys/mman.h>
 #include <unistd.h>
@@ -204,6 +205,14 @@ done:
  */
 aresult_t allocator_subsystem_init(void)
 {
+    aresult_t ret = A_OK;
+    char *a_nr_pages = NULL;
+    char *a_nr_huge_pages = NULL;
+    int nr_pages = NR_NORMAL_SLABS;
+    int nr_huge_pages = NR_HUGE_SLABS;
+    /* TODO: we should be smarter about this someday */
+    long huge_page_size = 2 * 1024 * 1024;
+
     if (slab_manager_initialized) {
         DIAG("Slab manager was already initialized, skipping.");
         return A_OK;
@@ -215,26 +224,32 @@ aresult_t allocator_subsystem_init(void)
         PANIC("System page size returned %d, aborting.", page_size);
     }
 
-    aresult_t ret = __allocator_subsystem_init_page_class(&mgr.normal_slabs,
-                                                          NR_NORMAL_SLABS,
-                                                          page_size,
-                                                          0);
+    if ((a_nr_pages = getenv("TSL_NR_SLABS")) != NULL) {
+        nr_pages = atoi(a_nr_pages);
+    }
 
-    if (AFAILED(ret)) {
+    if (0 >= nr_pages) {
+        PANIC("Must specify at least a minimal number of pages to be snarfed for the allocator subsystem.");
+    }
+
+    if (AFAILED(ret =
+        __allocator_subsystem_init_page_class(&mgr.normal_slabs, nr_pages, page_size, 0)))
+    {
         goto done;
     }
 
-    /* TODO: we should be smarter about this someday */
-    long huge_page_size = 2 * 1024 * 1024;
-
-    ret = __allocator_subsystem_init_page_class(&mgr.huge_slabs,
-                                                NR_HUGE_SLABS,
-                                                huge_page_size,
-                                                MAP_HUGETLB);
-
-    if (AFAILED(ret)) {
-        goto done;
+    if ((a_nr_huge_pages = getenv("TSL_NR_HUGE_SLABS")) != NULL) {
+        nr_huge_pages = atoi(a_nr_huge_pages);
     }
+
+    if (0 < nr_huge_pages) {
+        if (AFAILED(ret =
+            __allocator_subsystem_init_page_class(&mgr.huge_slabs, nr_huge_pages, huge_page_size, MAP_HUGETLB)))
+        {
+            goto done;
+        }
+    }
+
 
     slab_manager_initialized = 1;
 done:
@@ -277,7 +292,6 @@ struct slab *__helper_slab_init(void *slab_base,
     first = slab_base + first_obj_offset;
 
     /* Set up linked list of free items */
-    DIAG("First free item on new slab is %p, slab base is %p", first, slab_base);
     first->next = ALLOC_SLAB_NEXT_LINK;
     slab->free_items = first;
 
@@ -311,10 +325,7 @@ void __helper_add_slab(struct allocator *alloc,
 
 /* Public interface functions */
 
-aresult_t allocator_new(struct allocator **alloc,
-                        size_t item_size,
-                        size_t item_count,
-                        uint32_t flags)
+aresult_t allocator_new(struct allocator **alloc, size_t item_size, size_t item_count, uint32_t flags)
 {
     aresult_t result = A_OK;
 
@@ -439,8 +450,7 @@ done:
     return result;
 }
 
-aresult_t allocator_alloc(struct allocator *alloc,
-                          void **item_ptr)
+aresult_t allocator_alloc(struct allocator *alloc, void **item_ptr)
 {
     aresult_t result = A_OK;
 
@@ -529,17 +539,19 @@ aresult_t allocator_free(struct allocator *alloc,
 
     slab->free_item_count++;
 
-    /* Move this slab to the head of the list */
-    list_del(&slab->snode);
-    list_prepend(&alloc->slabs, &slab->snode);
-
-    /* Check if the slab was marked to be squeezed */
-    if (CAL_UNLIKELY(slab->flags & SLAB_FLAG_SQUEEZE)) {
-        if (slab->free_item_count == slab->max_items) {
-            /* Release the slab */
-            __helper_allocator_shrink(alloc, slab);
+    if (CAL_UNLIKELY(slab->free_item_count == slab->max_items)) {
+        if (alloc->slabs.next != alloc->slabs.prev) {
+            DIAG("Allocator %p returning slab %p to free page list", alloc, slab);
+            result = __helper_allocator_shrink(alloc, slab);
+        } else {
+            DIAG("Skipping freeing slabs, this is the last free slab.");
         }
+    } else {
+        /* Move this slab to the head of the list */
+        list_del(&slab->snode);
+        list_prepend(&alloc->slabs, &slab->snode);
     }
+
 
     *item_ptr = NULL;
 

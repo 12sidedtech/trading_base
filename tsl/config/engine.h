@@ -1,35 +1,8 @@
-/*
-  Copyright (c) 2014, 12Sided Technology, LLC
-  Author: Phil Vachon <pvachon@12sidedtech.com>
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-
-  - Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #ifndef __INCLUDED_TSL_CONFIG_ENGINE_H__
 #define __INCLUDED_TSL_CONFIG_ENGINE_H__
 
 #include <tsl/result.h>
+#include <tsl/cal.h>
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -75,6 +48,12 @@ struct config {
 };
 
 /**
+ * Helper macro for declaring a config object on stack with the given name, to be cleaned
+ * up on termination of the specified scope.
+ */
+#define CONFIG_RAII(__name) struct config *__name CAL_CLEANUP(config_delete) = NULL
+
+/**
  * Return the length of an array atom, if the specified atom is an array.
  * \param atm The atom to query
  * \param len The length, by reference
@@ -99,7 +78,11 @@ aresult_t config_get_boolean(struct config *cfg, bool *val, const char *item_id)
 #define __CONFIG_GET_PREFIX(which, cfg, tgt, prefix, item_id)           \
     ({  aresult_t __ret = A_OK;                                         \
         char *__xpath = NULL;                                           \
-        asprintf(&__xpath, "%s.%s", prefix, item_id);                   \
+        if (NULL != (prefix)) {                                         \
+            asprintf(&__xpath, "%s.%s", prefix, item_id);               \
+        } else {                                                        \
+            __xpath = strdup(item_id);                                  \
+        }                                                               \
         if (NULL == __xpath) {                                          \
             __ret = A_E_NOMEM;                                          \
         } else {                                                        \
@@ -146,6 +129,17 @@ aresult_t config_new(struct config **cfg);
  * \return A_OK on success, an error code otherwise
  */
 aresult_t config_add(struct config *cfg, const char *filename);
+
+/**
+ * Given a JSON string, parse and merge the JSON string into the given
+ * configuration atom.
+ *
+ * \param cfg A nested config atom that can accept new keys
+ * \param json_string The string of JSON to be parsed and added.
+ *
+ * \return A_OK on success, an error code otherwise.
+ */
+aresult_t config_add_string(struct config *cfg, const char *json_string);
 
 /**
  * Serialize the current configuration and return it as a string on the

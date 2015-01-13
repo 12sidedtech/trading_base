@@ -190,5 +190,29 @@
 #define CAL_WEAK \
     __attribute__((weak))
 
+/**
+ * Specify an implicit destructor call for when a variable falls out of scope.
+ */
+#define CAL_CLEANUP(func) \
+    __attribute__((cleanup(func)))
+
+/**
+ * Attribute for a variable specifying that the given variable should reside in
+ * thread-local storage.
+ */
+#define CAL_THREAD_LOCAL __thread
+
+/**
+ * A constant expression comparison that forces compile-time evaluation of a conditional.
+ *
+ * \param cond The const expression condition to evaluate
+ * \param if_true If the condition is true
+ * \param if_false If the condition is false
+ *
+ * \return Sets the return value to whatever the if_true expression if cond is true at
+ *         compile time, if_false otherwise.
+ */
+#define CAL_EVAL_CONSTEXPR(cond, if_true, if_false) ({ __builtin_choose_expr((cond), if_true, if_false); })
+
 #endif /* __INCLUDED_TSL_CAL_H__ */
 

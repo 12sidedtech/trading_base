@@ -110,18 +110,36 @@
 #define COLOR_RED           0x1
 /**@}*/
 
-aresult_t rb_tree_new(struct rb_tree *tree,
-                      rb_cmp_func_t compare)
+static
+int __rb_tree_cmp_mapper(void *state, void *lhs, void *rhs)
 {
-    aresult_t result = A_OK;
+    rb_cmp_func_t cmp = state;
+    return cmp(lhs, rhs);
+}
+
+aresult_t rb_tree_new_ex(struct rb_tree *tree,
+                         rb_cmp_func_ex_t compare,
+                         void *state)
+{
+    aresult_t ret = A_OK;
 
     TSL_ASSERT_ARG(tree != NULL);
     TSL_ASSERT_ARG(compare != NULL);
 
     tree->root = NULL;
     tree->compare = compare;
+    tree->state = state;
 
-    return result;
+    return ret;
+}
+
+aresult_t rb_tree_new(struct rb_tree *tree,
+                      rb_cmp_func_t compare)
+{
+    TSL_ASSERT_ARG(tree != NULL);
+    TSL_ASSERT_ARG(compare != NULL);
+
+    return rb_tree_new_ex(tree, __rb_tree_cmp_mapper, (void *)compare);
 }
 
 aresult_t rb_tree_destroy(struct rb_tree *tree)
@@ -168,7 +186,7 @@ aresult_t rb_tree_find(struct rb_tree *tree,
     struct rb_tree_node *node = tree->root;
 
     while (node != NULL) {
-        int compare = tree->compare(key, node->key);
+        int compare = tree->compare(tree->state, key, node->key);
 
         if (compare < 0) {
             node = node->left;
@@ -401,7 +419,7 @@ aresult_t rb_tree_insert(struct rb_tree *tree,
 
     /* Insert a node into the tree as you normally would */
     while (nd != NULL) {
-        int compare = tree->compare(node->key, nd->key);
+        int compare = tree->compare(tree->state, node->key, nd->key);
 
         if (compare == 0) {
             result = A_E_BUSY;
@@ -467,7 +485,7 @@ aresult_t rb_tree_find_or_insert(struct rb_tree *tree,
     struct rb_tree_node *node_prev = NULL;
     int dir = 0, rightmost = 1;
     while (node != NULL) {
-        int compare = tree->compare(key, node->key);
+        int compare = tree->compare(tree->state, key, node->key);
 
         if (compare < 0) {
             node_prev = node;

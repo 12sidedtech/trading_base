@@ -2,7 +2,7 @@
 *.so
 *.exe
 *.a
-
+cov-int/
 *.sw*
 debug
 release
