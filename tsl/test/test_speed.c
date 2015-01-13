@@ -5,10 +5,17 @@
 #include <string.h>
 #include <malloc.h>
 
+void cleanup_char(char **ptr)
+{
+    if (NULL != *ptr) {
+        free(*ptr);
+    }
+}
+
 TEST_DECL(test_speed)
 {
-    char *bufptr = memalign(64, 128);
-    char *outbuf = memalign(64, 128);
+    char *bufptr CAL_CLEANUP(cleanup_char) = memalign(64, 128);
+    char *outbuf CAL_CLEANUP(cleanup_char) = memalign(64, 128);
 
     TEST_ASSERT_NOT_EQUALS(bufptr, NULL);
     TEST_ASSERT_NOT_EQUALS(outbuf, NULL);
@@ -31,7 +38,6 @@ TEST_DECL(test_speed)
     TEST_ASSERT_EQUALS(outbuf[16], 0);
     TEST_ASSERT_EQUALS(outbuf[17], 0);
 
-    free(bufptr);
     return TEST_OK;
 }
 

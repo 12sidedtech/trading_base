@@ -3,7 +3,7 @@
 
 TEST_DECL(test_cpu_mask)
 {
-    struct cpu_mask *msk = NULL;
+    struct cpu_mask *msk CAL_CLEANUP(cpu_mask_destroy) = NULL;
 
     TEST_ASSERT_EQUALS(cpu_mask_create(&msk), A_OK);
     TEST_ASSERT_NOT_EQUALS(msk, NULL);

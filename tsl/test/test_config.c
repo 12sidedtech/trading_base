@@ -8,7 +8,7 @@
 TEST_DECL(test_config)
 {
     const char *test_file = "sample/config.json";
-    struct config *cfg = NULL;
+    struct config *cfg CAL_CLEANUP(config_delete) = NULL;
     char *path = NULL;
     int cpucore = -1;
 
